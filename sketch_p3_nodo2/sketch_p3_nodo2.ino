@@ -5,8 +5,8 @@
 #include <esp_wifi.h>
 
 //================= WiFi =================
-const char* ssid = "MoranSanchez"; // MoranSanchez - Internet_UNL
-const char* password = "0702594508"; // 0702594508 - UNL1859WiFi
+const char* ssid = "Internet_UNL"; // MoranSanchez - Internet_UNL
+const char* password = "UNL1859WiFi"; // 0702594508 - UNL1859WiFi
 
 //================= MQTT =================
 const int mqtt_port = 1883;

@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Papeleras Inteligentes</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Dashboard Logística</h1>
+
+        <div class="stats">
+            <div class="card">
+                <span class="card-label">Total Alertas</span>
+                <span class="card-value">{{ stats.total }}</span>
+            </div>
+            <div class="card">
+                <span class="card-label">Último nivel máximo registrado</span>
+                <span class="card-value">{{ stats.max_nivel or 0 }}%</span>
+            </div>
+        </div>
+
+        <div id="status-banner" class="status-normal">
+            <span id="status-icon">✓</span>
+            <span id="status-text">Papelera normal</span>
+        </div>
+
+        <div id="chart-container" class="hidden">
+            <canvas id="nivelChart"></canvas>
+        </div>
+
+        <h2>Últimas lecturas <button onclick="actualizar()" class="btn-refresh">↻</button></h2>
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Fecha</th>
+                        <th>Nivel</th>
+                        <th>Estado</th>
+                    </tr>
+                </thead>
+                <tbody id="alertas-body">
+                    {% for a in alertas %}
+                    <tr class="{{ 'alerta' if a.estado == 'alerta' else 'normal' }}">
+                        <td>{{ a.id }}</td>
+                        <td>{{ a.fecha }}</td>
+                        <td>{{ a.nivel }}%</td>
+                        <td>{{ a.estado }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        let chartInstance = null;
+
+        function renderChart(alertas) {
+            const container = document.getElementById('chart-container');
+            if (alertas.length === 0) {
+                container.classList.add('hidden');
+                return;
+            }
+            container.classList.remove('hidden');
+
+            if (chartInstance) chartInstance.destroy();
+
+            const ctx = document.getElementById('nivelChart').getContext('2d');
+            const labels = alertas.slice().reverse().map(a => a.fecha.slice(11, 19));
+            const valores = alertas.slice().reverse().map(a => a.nivel);
+
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Nivel',
+                        data: valores,
+                        segment: {
+                            borderColor: ctx => ctx.p0.parsed.y > 80 ? '#e94560' : '#4ecca3',
+                            backgroundColor: ctx => ctx.p0.parsed.y > 80 ? 'rgba(233,69,96,0.15)' : 'rgba(78,204,163,0.1)',
+                        },
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.3,
+                        pointBackgroundColor: valores.map(v => v > 80 ? '#e94560' : '#4ecca3'),
+                        pointRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            min: 0,
+                            max: 100,
+                            grid: { color: 'rgba(255,255,255,0.05)' }
+                        },
+                        x: {
+                            grid: { display: false }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                },
+                plugins: [{
+                    id: 'threshold',
+                    beforeDraw(chart) {
+                        const yScale = chart.scales.y;
+                        const y80 = yScale.getPixelForValue(80);
+                        const ctx = chart.ctx;
+                        ctx.save();
+                        ctx.setLineDash([5, 5]);
+                        ctx.strokeStyle = 'rgba(233,69,96,0.5)';
+                        ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        ctx.moveTo(chart.chartArea.left, y80);
+                        ctx.lineTo(chart.chartArea.right, y80);
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+                }]
+            });
+        }
+
+        function actualizar() {
+            fetch('/api/alertas')
+                .then(r => r.json())
+                .then(data => {
+                    const tbody = document.getElementById('alertas-body');
+                    tbody.innerHTML = '';
+                    data.alertas.slice(0, 20).forEach(a => {
+                        const tr = document.createElement('tr');
+                        tr.className = a.estado === 'alerta' ? 'alerta' : 'normal';
+                        tr.innerHTML = `<td>${a.id}</td><td>${a.fecha}</td><td>${a.nivel}%</td><td>${a.estado}</td>`;
+                        tbody.appendChild(tr);
+                    });
+
+                    document.querySelector('.card:nth-child(1) .card-value').textContent = data.stats.total;
+                    document.querySelector('.card:nth-child(2) .card-value').textContent = (data.stats.max_nivel ?? 0) + '%';
+
+                    const banner = document.getElementById('status-banner');
+                    const icon = document.getElementById('status-icon');
+                    const text = document.getElementById('status-text');
+                    const ultimo = data.alertas[0];
+                    if (ultimo && ultimo.estado === 'alerta') {
+                        banner.className = 'status-alerta';
+                        icon.textContent = '⚠';
+                        text.textContent = 'Papelera llena';
+                    } else {
+                        banner.className = 'status-normal';
+                        icon.textContent = '✓';
+                        text.textContent = 'Papelera normal';
+                    }
+
+                    renderChart(data.alertas);
+                })
+                .catch(err => console.error('Error:', err));
+        }
+        setInterval(actualizar, 10000);
+        actualizar();
+    </script>
+</body>
+</html>
