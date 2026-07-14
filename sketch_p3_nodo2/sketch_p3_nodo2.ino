@@ -2,13 +2,17 @@
 #include <esp_now.h>
 #include <PubSubClient.h>
 #include <ESPmDNS.h>
+#include <esp_wifi.h>
 
 //================= WiFi =================
-const char* ssid = "Internet_UNL"; // Internet_UNL - Fabricio's A56 - MoranSanchez
-const char* password = "UNL1859WiFi"; // UNL1859WiFi - holamundo100 - 0702594508
+const char* ssid = "Internet_UNL";
+const char* password = "UNL1859WiFi"; 
 
 //================= MQTT =================
 const int mqtt_port = 1883;
+// Elegir uno:
+const char* mqtt_host = "michu117-pc";     // hostname (sin .local)
+// const char* mqtt_host = "0.0.0.0";  // IP directa
 IPAddress mqtt_server;
 
 const char* topicNivel = "papelera/nivel";
@@ -22,6 +26,8 @@ const int BOTON = 4;
 //================= Variables =============
 bool buzzerSilenciado = false;
 bool alertaActiva = false;
+volatile bool datosRecibidos = false;
+volatile int nivelRecibido = 0;
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -42,24 +48,23 @@ void conectarWiFi() {
   Serial.print("Conectando al WiFi");
 
   while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
+    vTaskDelay(pdMS_TO_TICKS(500));
     Serial.print(".");
   }
 
   Serial.println("\nWiFi conectado");
+  Serial.print("Canal: ");
+  Serial.println(WiFi.channel());
   Serial.print("IP: ");
   Serial.println(WiFi.localIP());
 
-  MDNS.begin("esp32-gateway");
+  esp_wifi_set_ps(WIFI_PS_NONE);
 
-  for (int i = 0; i < 5; i++) {
-    mqtt_server = MDNS.queryHost("michu117-pc");
-    if (mqtt_server != IPAddress(0, 0, 0, 0)) break;
-    delay(1000);
-  }
-
-  if (mqtt_server == IPAddress(0, 0, 0, 0)) {
-    mqtt_server = IPAddress(192, 168, 100, 161);
+  if (!mqtt_server.fromString(mqtt_host)) {
+    MDNS.begin("esp32-gateway");
+    while ((mqtt_server = MDNS.queryHost(mqtt_host)) == IPAddress(0, 0, 0, 0)) {
+      vTaskDelay(pdMS_TO_TICKS(1000));
+    }
   }
 
   Serial.print("Broker MQTT: ");
@@ -85,7 +90,7 @@ void conectarMQTT() {
       Serial.print("Error: "); 
       Serial.println(client.state());
 
-      delay(2000);
+      vTaskDelay(pdMS_TO_TICKS(2000));
     }
   }
 }
@@ -96,54 +101,14 @@ void OnDataRecv(const esp_now_recv_info_t *recv_info,
                 int len) {
 
   memcpy(&datos, incomingData, sizeof(datos));
-
-  Serial.print("Nivel recibido: ");
-  Serial.print(datos.nivel);
-  Serial.println("%");
-
-  // Publicar siempre el porcentaje
-  char mensaje[5];
-  sprintf(mensaje, "%d", datos.nivel);
-  client.publish(topicNivel, mensaje);
-
-  if (datos.nivel > 80) {
-
-    digitalWrite(LED, HIGH);
-
-    // Activar buzzer únicamente si no fue silenciado
-    if (!buzzerSilenciado) {
-      digitalWrite(BUZZER, HIGH);
-    }
-
-    // Publicar alerta una sola vez
-    if (!alertaActiva) {
-
-      client.publish(topicAlerta, "Papelera llena");
-
-      Serial.println("***** ALERTA ENVIADA *****");
-
-      alertaActiva = true;
-    }
-
-  } else {
-
-    digitalWrite(LED, LOW);
-    digitalWrite(BUZZER, LOW);
-
-    // Rearmar sistema
-    buzzerSilenciado = false;
-    if (alertaActiva) {
-      client.publish(topicAlerta, "Papelera normal");
-      Serial.println("Alerta desactivada");
-    }
-    alertaActiva = false;
-  }
+  nivelRecibido = datos.nivel;
+  datosRecibidos = true;
 }
 
 //=========================================
 void setup() {
 
-  Serial.begin(115200);
+  Serial.begin(9600);
 
   pinMode(LED, OUTPUT);
   pinMode(BUZZER, OUTPUT);
@@ -152,9 +117,11 @@ void setup() {
   digitalWrite(LED, LOW);
   digitalWrite(BUZZER, LOW);
 
-  // ESP-NOW
+  // WiFi + MQTT (primero, para fijar el canal)
   WiFi.mode(WIFI_AP_STA);
+  conectarWiFi();
 
+  // ESP-NOW (después de WiFi, mismo canal)
   if (esp_now_init() != ESP_OK) {
 
     Serial.println("Error iniciando ESP-NOW");
@@ -162,9 +129,6 @@ void setup() {
   }
 
   esp_now_register_recv_cb(OnDataRecv);
-
-  // WiFi + MQTT
-  conectarWiFi();
 
   client.setServer(mqtt_server, mqtt_port);
 
@@ -181,10 +145,53 @@ void loop() {
 
   client.loop();
 
+  if (datosRecibidos) {
+
+    datosRecibidos = false;
+
+    Serial.print("Nivel recibido: ");
+    Serial.print(nivelRecibido);
+    Serial.println("%");
+
+    char mensaje[8];
+    sprintf(mensaje, "%d", nivelRecibido);
+    client.publish(topicNivel, mensaje);
+
+    if (nivelRecibido > 80) {
+
+      digitalWrite(LED, HIGH);
+
+      if (!buzzerSilenciado) {
+        digitalWrite(BUZZER, HIGH);
+      }
+
+      if (!alertaActiva) {
+
+        client.publish(topicAlerta, "Papelera llena");
+        Serial.println("***** ALERTA ENVIADA *****");
+        alertaActiva = true;
+      }
+
+    } else {
+
+      digitalWrite(LED, LOW);
+      digitalWrite(BUZZER, LOW);
+
+      buzzerSilenciado = false;
+
+      if (alertaActiva) {
+        client.publish(topicAlerta, "Papelera normal");
+        Serial.println("Alerta desactivada");
+      }
+
+      alertaActiva = false;
+    }
+  }
+
   // Pulsador para silenciar el buzzer
   if (digitalRead(BOTON) == LOW) {
 
-    if (datos.nivel > 80 && !buzzerSilenciado) {
+    if (nivelRecibido > 80 && !buzzerSilenciado) {
 
       buzzerSilenciado = true;
 
@@ -193,6 +200,6 @@ void loop() {
       Serial.println("Buzzer silenciado");
     }
 
-    delay(250);   // Antirrebote
+    vTaskDelay(pdMS_TO_TICKS(250));   // Antirrebote
   }
 }
