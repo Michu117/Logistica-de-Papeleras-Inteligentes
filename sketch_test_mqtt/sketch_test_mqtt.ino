@@ -6,6 +6,8 @@ const char* ssid = "Internet_UNL"; // Internet_UNL - Fabricio's A56 - MoranSanch
 const char* password = "UNL1859WiFi"; // UNL1859WiFi - holamundo100 - 0702594508
 
 const int mqtt_port = 1883;
+const char* mqtt_user = "Ruiz26";
+const char* mqtt_pass = "RelaxedChar206";
 IPAddress mqtt_server;
 
 const char* topicNivel = "papelera/nivel";
@@ -52,7 +54,7 @@ void conectarMQTT() {
     String clientId = "Test-";
     clientId += String(random(0xffff), HEX);
 
-    if (client.connect(clientId.c_str())) {
+    if (client.connect(clientId.c_str(), mqtt_user, mqtt_pass)) {
 
       Serial.println("Conectado");
 

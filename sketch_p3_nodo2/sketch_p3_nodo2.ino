@@ -5,14 +5,14 @@
 #include <esp_wifi.h>
 
 //================= WiFi =================
-const char* ssid = "Internet_UNL";
-const char* password = "UNL1859WiFi"; 
+const char* ssid = "MoranSanchez"; // MoranSanchez - Internet_UNL
+const char* password = "0702594508"; // 0702594508 - UNL1859WiFi
 
 //================= MQTT =================
 const int mqtt_port = 1883;
-// Elegir uno:
-const char* mqtt_host = "michu117-pc";     // hostname (sin .local)
-// const char* mqtt_host = "0.0.0.0";  // IP directa
+const char* mqtt_user = "Ruiz26";
+const char* mqtt_pass = "RelaxedChar206";
+const char* mqtt_host = "michu117-pc";
 IPAddress mqtt_server;
 
 const char* topicNivel = "papelera/nivel";
@@ -60,11 +60,14 @@ void conectarWiFi() {
 
   esp_wifi_set_ps(WIFI_PS_NONE);
 
-  if (!mqtt_server.fromString(mqtt_host)) {
-    MDNS.begin("esp32-gateway");
-    while ((mqtt_server = MDNS.queryHost(mqtt_host)) == IPAddress(0, 0, 0, 0)) {
-      vTaskDelay(pdMS_TO_TICKS(1000));
-    }
+  MDNS.begin("esp32-gateway");
+  for (int i = 0; i < 5; i++) {
+    mqtt_server = MDNS.queryHost(mqtt_host);
+    if (mqtt_server != IPAddress(0, 0, 0, 0)) break;
+    vTaskDelay(pdMS_TO_TICKS(1000));
+  }
+  if (mqtt_server == IPAddress(0, 0, 0, 0)) {
+    mqtt_server = IPAddress(192, 168, 100, 161);
   }
 
   Serial.print("Broker MQTT: ");
@@ -81,7 +84,7 @@ void conectarMQTT() {
     String clientId = "Gateway-";
     clientId += String(random(0xffff), HEX);
 
-    if (client.connect(clientId.c_str())) {
+    if (client.connect(clientId.c_str(), mqtt_user, mqtt_pass)) {
 
       Serial.println("Conectado");
 
