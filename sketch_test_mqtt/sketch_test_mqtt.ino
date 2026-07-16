@@ -10,8 +10,8 @@ const char* mqtt_user = "Ruiz26";
 const char* mqtt_pass = "RelaxedChar206";
 IPAddress mqtt_server;
 
-const char* topicNivel = "papelera/nivel";
-const char* topicAlerta = "papelera/alerta";
+const char* topicNivel = "contenedor/nivel";
+const char* topicAlerta = "contenedor/alerta";
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -95,27 +95,27 @@ void loop() {
   sprintf(mensaje, "%d", nivel);
 
   client.publish(topicNivel, mensaje);
-  Serial.print("Publicado papelera/nivel: ");
+  Serial.print("Publicado contenedor/nivel: ");
   Serial.print(nivel);
   Serial.println("%");
 
   if (nivel > 80) {
 
-    client.publish(topicAlerta, "Papelera llena");
-    Serial.println("Publicado papelera/alerta: Papelera llena");
+    client.publish(topicAlerta, "Contenedor llena");
+    Serial.println("Publicado contenedor/alerta: Contenedor llena");
 
   } else {
 
-    client.publish(topicAlerta, "Papelera normal");
-    Serial.println("Publicado papelera/alerta: Papelera normal");
+    client.publish(topicAlerta, "Contenedor normal");
+    Serial.println("Publicado contenedor/alerta: Contenedor normal");
   }
 
   contador++;
 
   if (contador % 5 == 0) {
 
-    client.publish("papelera/test", "Test OK");
-    Serial.println("Publicado papelera/test: Test OK");
+    client.publish("contenedor/test", "Test OK");
+    Serial.println("Publicado contenedor/test: Test OK");
   }
 
   delay(3000);

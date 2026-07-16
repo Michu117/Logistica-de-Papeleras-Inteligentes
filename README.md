@@ -1,34 +1,42 @@
-# Logistica-de-Papeleras-Inteligentes
+# Logística de Contenedores Inteligentes
 
 ## Visión general
 
-Sistema IoT para monitorear el nivel de llenado de papeleras en tiempo real. Sensores ultrasónicos (simulados con potenciómetros) en ESP32 envían datos vía ESP-NOW a un gateway, que los publica por MQTT a un broker Mosquitto. Una aplicación Python (Flask + Paho MQTT + SQLite) consume los mensajes y provee un dashboard web.
+Sistema IoT para monitorear el nivel de llenado de contenedores en tiempo real. Sensores ultrasónicos (simulados con potenciómetros) en ESP32 envían datos vía ESP-NOW a un gateway, que los publica por MQTT a un broker Mosquitto. Una aplicación Python (Flask + Paho MQTT + SQLite) consume los mensajes y provee un dashboard web con múltiples vistas por contenedor.
 
-## Arquitectura
+## Topología
 
 ```
-Nodo1 (ESP32) ──ESP-NOW──> Gateway (ESP32) ──MQTT──> Mosquitto ──> Flask (Python) ──> SQLite + Dashboard Web
+                  ┌──────────────────┐
+Nodo 1 ──ESP-NOW──>                  │
+(contenedor1)     │                  │
+                  │  Gateway (ESP32) ├──MQTT──> Mosquitto ──> Flask ──> Dashboard
+Nodo 2 ──ESP-NOW──>                  │
+(contenedor2)     │                  │
+                  └──────────────────┘
 ```
+
+Se implementó una **topología en estrella**: múltiples nodos ESP32 (contenedores) se comunican por ESP-NOW punto a punto con un único Gateway, que centraliza los datos y los publica al broker MQTT. Cada nodo se autoidentifica enviando un `nodo_id` en el struct ESP-NOW, lo que permite agregar nuevos contenedores sin modificar el Gateway ni hardcodear direcciones MAC.
 
 ## Componentes hardware
 
-### Nodo 1 (sketch_p3_nodo1/)
+### Nodo contenedor (sketch_p3_nodo1/, sketch_p3_nodo3/)
 - ESP32 con potenciómetro en pin 34
 - Lee nivel (0-100%) cada 2 segundos
-- Envía por ESP-NOW al Gateway
+- Envía struct con `nodo_id` y nivel por ESP-NOW al Gateway
+- `MI_ID` define el identificador del contenedor (1 → `contenedor1`, 2 → `contenedor2`)
 
-### Nodo 2 - Gateway (sketch_p3_nodo2/)
-- ESP32 con LED (pin 2), buzzer (pin 15), botón (pin 4)
-- Recibe datos por ESP-NOW
-- Publica en `papelera/nivel` con el valor numérico
-- Publica en `papelera/alerta` ("Papelera llena" / "Papelera normal")
-- Activa LED y buzzer cuando nivel > 80%
-- Botón para silenciar buzzer
+### Gateway (sketch_p3_nodo2/)
+- ESP32 con LED de alerta (pin 2)
+- Recibe datos por ESP-NOW desde múltiples nodos
+- Publica en `contenedor{ID}/nivel` con el valor numérico
+- Publica en `contenedor{ID}/alerta` según el nivel
+- Activa LED cuando nivel > 80%
 
 ### Mosquitto
 - Broker MQTT local (localhost:1883)
 - Credenciales: `Ruiz26` / `RelaxedChar206`
-- Topics: `papelera/nivel`, `papelera/alerta`, `papelera/test`
+- Topics dinámicos: `contenedor1/nivel`, `contenedor1/alerta`, `contenedor2/nivel`, etc.
 
 ## Componentes software (`web/`)
 
@@ -40,49 +48,51 @@ web/
 ├── database.py         # Capa de datos SQLite
 ├── mqtt_client.py      # Cliente MQTT (Paho)
 ├── requirements.txt    # flask, paho-mqtt
-├── papeleras.db        # Base de datos SQLite
+├── contenedores.db     # Base de datos SQLite
 ├── static/
-│   └── style.css       # Estilos del dashboard
+│   ├── style.css       # Estilos del dashboard
+│   └── dashboard.js    # Lógica del dashboard (modal, tabs, chart, tabla)
 └── templates/
-    └── dashboard.html  # Interfaz web
+    └── dashboard.html  # Interfaz web (HTML mínimo)
 ```
 
 ### app.py
-- `/` — Dashboard HTML con datos en tiempo real
-- `/api/alertas` — Endpoint JSON con últimas alertas y estadísticas
+- `GET /` — Dashboard HTML con datos en tiempo real
+- `GET /api/alertas` — Endpoint JSON con últimas alertas y estadísticas (filtrable por `?nodo=`)
+- `GET /api/estado` — Endpoint JSON con lecturas en vivo por contenedor
+- `GET /api/contenedores` — Lista de contenedores registrados
+- `POST /api/contenedores` — Registrar nuevo contenedor
+- `PUT /api/contenedores/<id>` — Editar ubicación de contenedor
 - Inicia el cliente MQTT en un thread aparte
 
 ### database.py
-- Tabla `alertas(id, fecha, nivel, estado)`
-- `init_db()` — crea la tabla si no existe
-- `insert_alerta(fecha, nivel, estado)` — inserta un registro
-- `get_alertas(limit)` — últimas N alertas
-- `get_ultimo_estado()` — último estado registrado (para evitar duplicados)
-- `get_stats()` — total de registros y último nivel de alerta
+- Tabla `alertas(id, fecha, nivel, estado, nodo_id)` — historial de cambios de estado
+- Tabla `contenedores(id, lat, lon, ubicacion)` — registro de contenedores
+- Solo persiste cambios de estado (alerta ↔ normal); lecturas normales quedan en memoria
 
 ### mqtt_client.py
-- Se conecta al broker MQTT local con las credenciales del sistema
-- Se suscribe a `papelera/nivel`, `papelera/alerta`, `papelera/test`
-- Solo almacena en BD cuando hay cambio de estado (nivel > 80 → `alerta`, ≤ 80 → `normal`)
-- Consulta el último estado desde la BD para evitar duplicados
+- Se suscribe a `+/nivel` y `+/alerta` (topics dinámicos por contenedor)
+- Mantiene `lecturas_en_vivo` (dict global) con último nivel por contenedor
+- Inserta en BD solo cuando hay cambio de estado
 
 ### Dashboard web
-- **Banner de estado**: muestra "Papelera normal" (verde) o "Papelera llena" (⚠ rojo)
-- **Total de alertas** y **último nivel máximo registrado**
-- **Gráfico de líneas** (Chart.js): línea roja > 80%, verde ≤ 80%, con línea punteada de umbral en 80%
-- **Tabla** con últimas 20 lecturas (ID, fecha, nivel, estado)
-- Actualización automática cada 10 segundos
-- Botón ↻ para refrescar manualmente
+- **Pestañas**: "Todos" (vista general) + una pestaña por contenedor
+- **Grid resumen** (vista "Todos"): tarjetas por contenedor con nivel, barra de progreso y ubicación
+- **Banner de estado** (vista individual): muestra nivel actual, estado y ubicación del contenedor
+- **Gráfico de líneas** (Chart.js): multicolor (un color por contenedor), con umbral punteado en 80%. No se destruye/recrea en cada actualización
+- **Estadísticas**: total de alertas (>80%) y contenedores activos o último nivel máximo
+- **Tabla** con últimas lecturas: ID, contenedor, ubicación, fecha, nivel (barra), estado
+- **Paginación**: 10 filas iniciales, botón "Mostrar más" para ver el historial completo
+- Auto-refresh cada 10 segundos sin recargar la página
 
 ## Flujo de datos
 
-1. Nodo 1 lee potenciómetro y envía nivel (0-100%) por ESP-NOW
-2. Gateway recibe y publica en `papelera/nivel`
-3. Si nivel > 80%, publica alerta y activa LED/buzzer
-4. Mosquitto recibe y distribuye a suscriptores
-5. `mqtt_client.py` recibe el mensaje, compara con último estado en BD
-6. Si hay cambio de estado, inserta en SQLite
-7. Dashboard Flask consulta la BD y muestra los datos
+1. Cada nodo lee el potenciómetro y envía un struct ESP-NOW con `nodo_id` y nivel
+2. Gateway recibe, identifica el nodo y publica en `contenedor{ID}/nivel`
+3. Si nivel > 80%, publica alerta y enciende LED
+4. Mosquitto distribuye a suscriptores
+5. `mqtt_client.py` recibe, actualiza `lecturas_en_vivo` y persiste solo si hay cambio de estado
+6. Dashboard consulta `/api/estado` (en vivo) y `/api/alertas` (historial) cada 10s
 
 ## Instalación y ejecución
 
@@ -102,6 +112,8 @@ http://localhost:5000
 
 ## Notas
 
-- Las credenciales MQTT están hardcodeadas en `mqtt_client.py`
-- No se requiere modificar los ESP32 existentes
-- El dashboard requiere JavaScript (Chart.js vía CDN)
+- Los nodos se autoidentifican por `MI_ID` en el firmware — no requieren MACs hardcodeadas
+- Los contenedores se registran desde el dashboard (modal con ID, lat, lon, ubicación)
+- Las credenciales MQTT están en `mqtt_client.py`
+- El dashboard requiere Chart.js (vía CDN)
+- La base de datos `contenedores.db` se crea automáticamente al iniciar

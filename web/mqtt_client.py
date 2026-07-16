@@ -7,14 +7,15 @@ MQTT_PORT = 1883
 MQTT_USER = "Ruiz26"
 MQTT_PASS = "RelaxedChar206"
 
-TOPICS = ["papelera/nivel", "papelera/alerta", "papelera/test"]
+lecturas_en_vivo = {}
 
 
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
         print("MQTT conectado")
-        for topic in TOPICS:
-            client.subscribe(topic)
+        client.subscribe("+/nivel")
+        client.subscribe("+/alerta")
+        client.subscribe("contenedor/test")
     else:
         print(f"Error MQTT: rc={rc}")
 
@@ -23,23 +24,36 @@ def on_message(client, userdata, msg):
     payload = msg.payload.decode()
     fecha = datetime.now().isoformat()
 
-    if msg.topic == "papelera/nivel":
+    parts = msg.topic.split('/')
+    if len(parts) == 2:
+        nodo_id = parts[0]
+    else:
+        nodo_id = "desconocido"
+
+    if msg.topic.endswith("/nivel"):
         try:
             nivel = int(payload)
             nuevo_estado = "alerta" if nivel > 80 else "normal"
-            ultimo_estado = database.get_ultimo_estado()
+
+            lecturas_en_vivo[nodo_id] = {
+                "nivel": nivel,
+                "fecha": fecha,
+                "estado": nuevo_estado
+            }
+
+            ultimo_estado = database.get_ultimo_estado(nodo_id)
             if ultimo_estado != nuevo_estado:
-                database.insert_alerta(fecha, nivel, nuevo_estado)
-                print(f"[DB] Cambio de estado: {nuevo_estado} ({nivel}%)")
+                database.insert_alerta(fecha, nivel, nuevo_estado, nodo_id)
+                print(f"[DB] {nodo_id}: {nuevo_estado} ({nivel}%)")
             else:
-                print(f"[INFO] Nivel {nivel}% (sin cambio)")
+                print(f"[LIVE] {nodo_id}: {nivel}% ({nuevo_estado})")
         except ValueError:
             print(f"[WARN] payload no numérico: {payload}")
 
-    elif msg.topic == "papelera/alerta":
-        print(f"[ALERTA] {payload}")
+    elif msg.topic.endswith("/alerta"):
+        print(f"[ALERTA] {nodo_id}: {payload}")
 
-    elif msg.topic == "papelera/test":
+    elif msg.topic.endswith("/test"):
         print(f"[TEST] {payload}")
 
 

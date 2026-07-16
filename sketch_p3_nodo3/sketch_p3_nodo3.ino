@@ -5,7 +5,7 @@
 uint8_t gatewayMAC[] = { 0x00, 0x70, 0x07, 0x82, 0xE9, 0xA0 };
 
 const int potPin = 34;
-const int MI_ID = 1;
+const int MI_ID = 2;
 
 typedef struct {
   int nivel;
