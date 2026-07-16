@@ -5,13 +5,11 @@ let alertasCache = [];
 let filasVisibles = 0;
 const PAGE = 10;
 
-const COLORS = {
-    'contenedor1': { border: '#e94560', bg: 'rgba(233,69,96,0.15)', bar: '#e94560' },
-    'contenedor2': { border: '#0ea5e9', bg: 'rgba(14,165,233,0.15)', bar: '#0ea5e9' },
-};
-
 function colorOf(n) {
-    return COLORS[n] || { border: '#e94560', bg: 'rgba(233,69,96,0.15)', bar: '#e94560' };
+    const colores = ['#e94560','#0ea5e9','#f59e0b','#10b981','#8b5cf6','#ec4899','#14b8a6','#f97316','#6366f1','#84cc16'];
+    const idx = parseInt(n.replace('contenedor', ''), 10);
+    const c = colores[((idx - 1) % colores.length + colores.length) % colores.length] || colores[0];
+    return { border: c, bg: c + '22', bar: c };
 }
 
 function fmtFecha(iso) {
@@ -21,10 +19,17 @@ function fmtFecha(iso) {
 }
 
 document.getElementById('btn-add-nodo').addEventListener('click', () => {
-    document.getElementById('modal-overlay').classList.remove('hidden');
-    ['input-nodo-id','input-lat','input-lon','input-ubicacion'].forEach(id => document.getElementById(id).value = '');
-    document.getElementById('input-nodo-id').focus();
+    abrirModal();
 });
+
+function abrirModal() {
+    const nums = todosNodos.map(n => parseInt(n.id.replace('contenedor', ''), 10)).filter(n => !isNaN(n));
+    const next = nums.length > 0 ? Math.max(...nums) + 1 : 1;
+    document.getElementById('modal-overlay').classList.remove('hidden');
+    document.getElementById('input-nodo-id').value = 'contenedor' + next;
+    ['input-lat','input-lon','input-ubicacion'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('input-nodo-id').focus();
+}
 
 function cerrarModal() {
     document.getElementById('modal-overlay').classList.add('hidden');
@@ -36,7 +41,7 @@ document.getElementById('modal-overlay').addEventListener('click', e => {
 });
 
 document.getElementById('btn-confirm').addEventListener('click', async () => {
-    const id = document.getElementById('input-nodo-id').value.trim();
+    const id = document.getElementById('input-nodo-id').value.trim().replace(/\s+/g, '');
     if (!id) return;
     const lat = parseFloat(document.getElementById('input-lat').value) || null;
     const lon = parseFloat(document.getElementById('input-lon').value) || null;
@@ -83,11 +88,7 @@ function renderTabs() {
     addBtn.title = 'Agregar contenedor';
     addBtn.textContent = '+';
     tabs.appendChild(addBtn);
-    document.getElementById('btn-add-nodo').addEventListener('click', () => {
-        document.getElementById('modal-overlay').classList.remove('hidden');
-        ['input-nodo-id','input-lat','input-lon','input-ubicacion'].forEach(id => document.getElementById(id).value = '');
-        document.getElementById('input-nodo-id').focus();
-    });
+    document.getElementById('btn-add-nodo').addEventListener('click', abrirModal);
 }
 
 document.getElementById('tabs').addEventListener('click', e => {

@@ -31,7 +31,7 @@ def api_estado():
 def api_contenedores():
     if request.method == 'POST':
         data = request.get_json()
-        nodo_id = data.get('id', '').strip()
+        nodo_id = data.get('id', '').strip().replace(' ', '')
         if not nodo_id:
             return jsonify({'error': 'ID requerido'}), 400
         if not nodo_id.startswith('contenedor'):
