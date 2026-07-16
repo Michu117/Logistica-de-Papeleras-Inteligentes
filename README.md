@@ -110,6 +110,41 @@ python web/app.py
 http://localhost:5000
 ```
 
+## Agregar un nuevo contenedor
+
+El sistema está diseñado para escalar sin modificar el Gateway ni el servidor. Solo dos pasos:
+
+### 1. Firmware del nuevo nodo
+
+Copia `sketch_contenedor1/` y renómbralo, o edita directamente `sketch_contenedor1/sketch_contenedor1.ino` cambiando `MI_ID`:
+
+```cpp
+#define MI_ID 3   // ID único para el nuevo contenedor
+```
+
+La MAC del Gateway ya está en el código; no necesita cambios.  
+El nodo enviará `nodo_id=3` en el struct ESP-NOW y el Gateway publicará automáticamente en `contenedor3/nivel`.
+
+### 2. Registro en el dashboard
+
+Abre el dashboard en `http://localhost:5000`, haz clic en **+** (pestaña final) y completa:
+- **ID**: `contenedor3`
+- **Latitud / Longitud**: coordenadas GPS
+- **Dirección**: ubicación descriptiva
+
+Esto guarda el contenedor en la tabla `contenedores` de SQLite y la pestaña aparece automáticamente.
+
+### Topics MQTT asignados
+
+El Gateway genera los topics dinámicamente según `nodo_id`:
+
+| Topic | Formato | Ejemplo |
+|---|---|---|
+| Nivel | `contenedor{ID}/nivel` | `contenedor3/nivel` |
+| Alerta | `contenedor{ID}/alerta` | `contenedor3/alerta` |
+
+El backend Flask se suscribe a `+/nivel` y `+/alerta` (comodín MQTT), por lo que cualquier contenedor nuevo es detectado automáticamente sin reiniciar.
+
 ## Notas
 
 - Los nodos se autoidentifican por `MI_ID` en el firmware — no requieren MACs hardcodeadas

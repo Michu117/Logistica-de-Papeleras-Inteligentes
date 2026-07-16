@@ -23,6 +23,9 @@ volatile bool datosRecibidos = false;
 volatile int nivelRecibido = 0;
 volatile int nodoIdRecibido = 0;
 
+// Estados de alerta por nodo (indexado por nodo_id)
+bool alertaPorNodo[10] = {false};
+
 WiFiClient espClient;
 PubSubClient client(espClient);
 
@@ -142,14 +145,22 @@ void loop() {
     sprintf(mensaje, "%d", nivelRecibido);
     client.publish(topicNivel, mensaje);
 
-    if (nivelRecibido > 80) {
-      digitalWrite(LED, HIGH);
+    bool enAlerta = nivelRecibido > 80;
+    alertaPorNodo[nodoIdRecibido] = enAlerta;
+
+    if (enAlerta) {
       client.publish(topicAlerta, "Contenedor lleno");
       Serial.print("***** ALERTA nodo ");
       Serial.println(nodoIdRecibido);
     } else {
-      digitalWrite(LED, LOW);
       client.publish(topicAlerta, "Contenedor normal");
     }
+
+    // LED encendido si ALGÚN nodo está en alerta
+    bool algunAlerta = false;
+    for (int i = 1; i < 10; i++) {
+      if (alertaPorNodo[i]) { algunAlerta = true; break; }
+    }
+    digitalWrite(LED, algunAlerta ? HIGH : LOW);
   }
 }
