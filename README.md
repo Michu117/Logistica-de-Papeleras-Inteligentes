@@ -7,31 +7,36 @@ Sistema IoT para monitorear el nivel de llenado de contenedores en tiempo real. 
 ## Topología
 
 ```
-                  ┌──────────────────┐
-Nodo 1 ──ESP-NOW──>                  │
-(contenedor1)     │                  │
-                  │  Gateway (ESP32) ├──MQTT──> Mosquitto ──> Flask ──> Dashboard
-Nodo 2 ──ESP-NOW──>                  │
-(contenedor2)     │                  │
-                  └──────────────────┘
+Nodo 1 ──ESP-NOW──┐
+(contenedor1)     │
+                  ├──> Gateway (ESP32) ──MQTT──> Flask (Python)
+Nodo 2 ──ESP-NOW──┘
+(contenedor2)
+                                                 │
+                                            ┌────┴────┐
+                                            │         │
+                                            ▼         ▼
+                                       ┌────────┐ ┌──────────┐
+                                       │ SQLite │ │Dashboard │
+                                       └────────┘ └──────────┘
 ```
 
-Se implementó una **topología en estrella**: múltiples nodos ESP32 (contenedores) se comunican por ESP-NOW punto a punto con un único Gateway, que centraliza los datos y los publica al broker MQTT. Cada nodo se autoidentifica enviando un `nodo_id` en el struct ESP-NOW, lo que permite agregar nuevos contenedores sin modificar el Gateway ni hardcodear direcciones MAC.
+Se implementó una **topología en estrella**: múltiples nodos ESP32 (contenedores) se comunican por ESP-NOW punto a punto con un único Gateway, que centraliza los datos y los publica a un broker MQTT local (Mosquitto en `localhost:1883`). Una aplicación Flask (Python) se suscribe al broker, actualiza un diccionario en memoria con las lecturas en vivo de cada contenedor y persiste solo los cambios de estado (alerta ↔ normal) en SQLite. El mismo Flask sirve un dashboard web con API REST que el frontend consulta periódicamente vía AJAX. Cada nodo se autoidentifica enviando un `nodo_id` en el struct ESP-NOW, lo que permite agregar nuevos contenedores sin modificar el Gateway ni hardcodear direcciones MAC.
 
 ## Componentes hardware
 
-### Nodo contenedor (sketch_p3_nodo1/, sketch_p3_nodo3/)
+### Nodo contenedor (sketch_contenedor1/, sketch_contenedor2/)
 - ESP32 con potenciómetro en pin 34
 - Lee nivel (0-100%) cada 2 segundos
 - Envía struct con `nodo_id` y nivel por ESP-NOW al Gateway
 - `MI_ID` define el identificador del contenedor (1 → `contenedor1`, 2 → `contenedor2`)
 
-### Gateway (sketch_p3_nodo2/)
+### Gateway (sketch_gateway/)
 - ESP32 con LED de alerta (pin 2)
 - Recibe datos por ESP-NOW desde múltiples nodos
 - Publica en `contenedor{ID}/nivel` con el valor numérico
 - Publica en `contenedor{ID}/alerta` según el nivel
-- Activa LED cuando nivel > 80%
+- LED encendido mientras al menos un contenedor tenga nivel > 80%
 
 ### Mosquitto
 - Broker MQTT local (localhost:1883)
@@ -89,7 +94,7 @@ web/
 
 1. Cada nodo lee el potenciómetro y envía un struct ESP-NOW con `nodo_id` y nivel
 2. Gateway recibe, identifica el nodo y publica en `contenedor{ID}/nivel`
-3. Si nivel > 80%, publica alerta y enciende LED
+3. Si algún contenedor supera 80%, publica alerta y enciende LED hasta que todos vuelvan a normal
 4. Mosquitto distribuye a suscriptores
 5. `mqtt_client.py` recibe, actualiza `lecturas_en_vivo` y persiste solo si hay cambio de estado
 6. Dashboard consulta `/api/estado` (en vivo) y `/api/alertas` (historial) cada 10s
@@ -109,6 +114,41 @@ python web/app.py
 # Abrir en navegador
 http://localhost:5000
 ```
+
+## Agregar un nuevo contenedor
+
+El sistema está diseñado para escalar sin modificar el Gateway ni el servidor. Solo dos pasos:
+
+### 1. Firmware del nuevo nodo
+
+Copia `sketch_contenedor1/` y renómbralo, o edita directamente `sketch_contenedor1/sketch_contenedor1.ino` cambiando `MI_ID`:
+
+```cpp
+#define MI_ID 3   // ID único para el nuevo contenedor
+```
+
+La MAC del Gateway ya está en el código; no necesita cambios.  
+El nodo enviará `nodo_id=3` en el struct ESP-NOW y el Gateway publicará automáticamente en `contenedor3/nivel`.
+
+### 2. Registro en el dashboard
+
+Abre el dashboard en `http://localhost:5000`, haz clic en **+** (pestaña final) y completa:
+- **ID**: `contenedor3`
+- **Latitud / Longitud**: coordenadas GPS
+- **Dirección**: ubicación descriptiva
+
+Esto guarda el contenedor en la tabla `contenedores` de SQLite y la pestaña aparece automáticamente.
+
+### Topics MQTT asignados
+
+El Gateway genera los topics dinámicamente según `nodo_id`:
+
+| Topic | Formato | Ejemplo |
+|---|---|---|
+| Nivel | `contenedor{ID}/nivel` | `contenedor3/nivel` |
+| Alerta | `contenedor{ID}/alerta` | `contenedor3/alerta` |
+
+El backend Flask se suscribe a `+/nivel` y `+/alerta` (comodín MQTT), por lo que cualquier contenedor nuevo es detectado automáticamente sin reiniciar.
 
 ## Notas
 
