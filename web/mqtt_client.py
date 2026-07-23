@@ -1,6 +1,7 @@
 import paho.mqtt.client as mqtt
 from datetime import datetime
 import database
+import telegram_bot
 
 MQTT_HOST = "localhost"
 MQTT_PORT = 1883
@@ -45,6 +46,8 @@ def on_message(client, userdata, msg):
             if ultimo_estado != nuevo_estado:
                 database.insert_alerta(fecha, nivel, nuevo_estado, nodo_id)
                 print(f"[DB] {nodo_id}: {nuevo_estado} ({nivel}%)")
+                icono = "⚠ ALERTA" if nuevo_estado == "alerta" else "✓ NORMAL"
+                telegram_bot.enviar_alerta(f"{icono} - {nodo_id}\nNivel: {nivel}%\nFecha: {fecha[:19]}")
             else:
                 print(f"[LIVE] {nodo_id}: {nivel}% ({nuevo_estado})")
         except ValueError:
