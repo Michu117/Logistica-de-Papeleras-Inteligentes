@@ -1,0 +1,7 @@
+.gitignore
+mqtt_start.sh
+mqtt_stop.sh
+setup_mosquitto.sh
+.env
+__pycache__/
+*.db
