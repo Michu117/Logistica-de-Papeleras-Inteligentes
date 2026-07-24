@@ -25,6 +25,7 @@ def init_db():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS contenedores(
             id TEXT PRIMARY KEY,
+            nombre TEXT DEFAULT NULL,
             lat REAL,
             lon REAL,
             ubicacion TEXT
@@ -102,6 +103,15 @@ def get_stats(nodo_id=None):
     return {'total': total, 'max_nivel': max_nivel}
 
 
+def get_nodo(nodo_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM contenedores WHERE id = ?', (nodo_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
 def get_nodos():
     conn = get_connection()
     cursor = conn.cursor()
@@ -111,13 +121,13 @@ def get_nodos():
     return rows
 
 
-def add_nodo(nodo_id, lat=None, lon=None, ubicacion=None):
+def add_nodo(nodo_id, lat=None, lon=None, ubicacion=None, nombre=None):
     conn = get_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(
-            'INSERT OR IGNORE INTO contenedores (id, lat, lon, ubicacion) VALUES (?, ?, ?, ?)',
-            (nodo_id, lat, lon, ubicacion)
+            'INSERT OR IGNORE INTO contenedores (id, nombre, lat, lon, ubicacion) VALUES (?, ?, ?, ?, ?)',
+            (nodo_id, nombre, lat, lon, ubicacion)
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -125,13 +135,13 @@ def add_nodo(nodo_id, lat=None, lon=None, ubicacion=None):
         conn.close()
 
 
-def update_nodo(nodo_id, lat=None, lon=None, ubicacion=None):
+def update_nodo(nodo_id, lat=None, lon=None, ubicacion=None, nombre=None):
     conn = get_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(
-            'UPDATE contenedores SET lat = ?, lon = ?, ubicacion = ? WHERE id = ?',
-            (lat, lon, ubicacion, nodo_id)
+            'UPDATE contenedores SET nombre = ?, lat = ?, lon = ?, ubicacion = ? WHERE id = ?',
+            (nombre, lat, lon, ubicacion, nodo_id)
         )
         conn.commit()
         return cursor.rowcount > 0

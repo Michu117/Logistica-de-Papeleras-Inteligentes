@@ -5,11 +5,9 @@
 uint8_t gatewayMAC[] = { 0x00, 0x70, 0x07, 0x82, 0xE9, 0xA0 };
 
 const int potPin = 34;
-const int MI_ID = 1;
 
 typedef struct {
   int nivel;
-  int nodo_id;
 } Mensaje;
 
 Mensaje datos;
@@ -17,8 +15,6 @@ Mensaje datos;
 void setup() {
   Serial.begin(115200);
   pinMode(potPin, INPUT);
-
-  datos.nodo_id = MI_ID;
 
   WiFi.mode(WIFI_STA);
   esp_wifi_set_channel(7, WIFI_SECOND_CHAN_NONE);
@@ -39,8 +35,8 @@ void setup() {
     return;
   }
 
-  Serial.print("Nodo ");
-  Serial.print(MI_ID);
+  Serial.print("Nodo MAC ");
+  Serial.print(WiFi.macAddress());
   Serial.println(" listo (canal 7)");
 }
 
@@ -50,9 +46,7 @@ void loop() {
 
   esp_now_send(gatewayMAC, (uint8_t *)&datos, sizeof(datos));
 
-  Serial.print("Nodo ");
-  Serial.print(MI_ID);
-  Serial.print(": ");
+  Serial.print("Nivel: ");
   Serial.println(datos.nivel);
 
   vTaskDelay(pdMS_TO_TICKS(2000));

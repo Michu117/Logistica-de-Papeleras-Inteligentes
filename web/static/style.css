@@ -283,6 +283,34 @@ h1 {
     font-size: 1.5rem;
 }
 
+#toolbar-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 12px;
+    gap: 8px;
+}
+
+.btn-editar {
+    background: transparent;
+    color: #888;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 4px 14px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-left: auto;
+}
+
+.btn-editar:hover {
+    border-color: #e94560;
+    color: #e94560;
+}
+
+.btn-editar:hover {
+    background: rgba(233,69,96,0.1);
+}
+
 /* Chart */
 #chart-container {
     background: #16213e;

@@ -3,12 +3,18 @@ let nodoActivo = 'todos';
 let todosNodos = [];
 let alertasCache = [];
 let filasVisibles = 0;
+let editandoId = null;
 const PAGE = 10;
 
-function colorOf(n) {
+function colorOf(id) {
     const colores = ['#e94560','#0ea5e9','#f59e0b','#10b981','#8b5cf6','#ec4899','#14b8a6','#f97316','#6366f1','#84cc16'];
-    const idx = parseInt(n.replace('contenedor', ''), 10);
-    const c = colores[((idx - 1) % colores.length + colores.length) % colores.length] || colores[0];
+    let hash = 0;
+    for (let i = 0; i < id.length; i++) {
+        hash = ((hash << 5) - hash) + id.charCodeAt(i);
+        hash |= 0;
+    }
+    const idx = ((hash % colores.length) + colores.length) % colores.length;
+    const c = colores[idx];
     return { border: c, bg: c + '22', bar: c };
 }
 
@@ -18,17 +24,26 @@ function fmtFecha(iso) {
            d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-document.getElementById('btn-add-nodo').addEventListener('click', () => {
-    abrirModal();
-});
 
-function abrirModal() {
-    const nums = todosNodos.map(n => parseInt(n.id.replace('contenedor', ''), 10)).filter(n => !isNaN(n));
-    const next = nums.length > 0 ? Math.max(...nums) + 1 : 1;
+
+function abrirModal(container) {
+    editandoId = container ? container.id : null;
+    const titulo = document.getElementById('modal-title');
+    const btnConfirm = document.getElementById('btn-confirm');
+    const idInput = document.getElementById('input-nodo-id');
+    titulo.textContent = editandoId ? 'Editar contenedor' : 'Agregar contenedor';
+    btnConfirm.textContent = editandoId ? 'Guardar' : 'Agregar';
+    idInput.value = container ? container.id : '';
+    idInput.readOnly = !!container;
+    idInput.style.background = container ? '#0f3460' : '#16213e';
+    idInput.style.color = container ? '#888' : '#eee';
+    idInput.style.cursor = container ? 'not-allowed' : 'text';
+    document.getElementById('input-nombre').value = container ? (container.nombre || '') : '';
+    document.getElementById('input-lat').value = container ? (container.lat || '') : '';
+    document.getElementById('input-lon').value = container ? (container.lon || '') : '';
+    document.getElementById('input-ubicacion').value = container ? (container.ubicacion || '') : '';
     document.getElementById('modal-overlay').classList.remove('hidden');
-    document.getElementById('input-nodo-id').value = 'contenedor' + next;
-    ['input-lat','input-lon','input-ubicacion'].forEach(id => document.getElementById(id).value = '');
-    document.getElementById('input-nodo-id').focus();
+    idInput.focus();
 }
 
 function cerrarModal() {
@@ -43,14 +58,17 @@ document.getElementById('modal-overlay').addEventListener('click', e => {
 document.getElementById('btn-confirm').addEventListener('click', async () => {
     const id = document.getElementById('input-nodo-id').value.trim().replace(/\s+/g, '');
     if (!id) return;
+    const nombre = document.getElementById('input-nombre').value.trim() || null;
     const lat = parseFloat(document.getElementById('input-lat').value) || null;
     const lon = parseFloat(document.getElementById('input-lon').value) || null;
     const ubicacion = document.getElementById('input-ubicacion').value.trim() || null;
     try {
-        const r = await fetch('/api/contenedores', {
-            method: 'POST',
+        const method = editandoId ? 'PUT' : 'POST';
+        const url = editandoId ? `/api/contenedores/${editandoId}` : '/api/contenedores';
+        const r = await fetch(url, {
+            method: method,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id, lat, lon, ubicacion })
+            body: JSON.stringify({ id, nombre, lat, lon, ubicacion })
         });
         const data = await r.json();
         if (data.ok) {
@@ -79,16 +97,10 @@ function renderTabs() {
         const btn = document.createElement('button');
         btn.className = 'tab';
         btn.dataset.nodo = n.id;
-        btn.textContent = n.id;
+        btn.textContent = n.nombre || n.id;
         tabs.appendChild(btn);
     });
-    const addBtn = document.createElement('button');
-    addBtn.className = 'tab tab-add';
-    addBtn.id = 'btn-add-nodo';
-    addBtn.title = 'Agregar contenedor';
-    addBtn.textContent = '+';
-    tabs.appendChild(addBtn);
-    document.getElementById('btn-add-nodo').addEventListener('click', abrirModal);
+
 }
 
 document.getElementById('tabs').addEventListener('click', e => {
@@ -153,7 +165,7 @@ function renderChart(alertas) {
             const c = colorOf(n.id);
             if (pts.length === 0) return null;
             return {
-                label: n.id, data: pts.map(a => a.nivel),
+                label: n.nombre || n.id, data: pts.map(a => a.nivel),
                 borderColor: c.border, backgroundColor: c.bg,
                 fill: false, tension: 0.3, pointRadius: 3, borderWidth: 2
             };
@@ -172,9 +184,11 @@ function renderChart(alertas) {
         const pts = alertas.slice().reverse();
         const labels = pts.map(a => fmtFecha(a.fecha));
         const valores = pts.map(a => a.nivel);
+        const cont = todosNodos.find(n => n.id === nodoActivo);
+        const labelActivo = cont?.nombre || nodoActivo;
         const c = colorOf(nodoActivo);
         const ds = [{
-            label: nodoActivo, data: valores,
+            label: labelActivo, data: valores,
             segment: {
                 borderColor: ctx => ctx.p0.parsed.y > 80 ? '#e94560' : '#4ecca3',
                 backgroundColor: ctx => ctx.p0.parsed.y > 80 ? 'rgba(233,69,96,0.15)' : 'rgba(78,204,163,0.1)',
@@ -207,11 +221,11 @@ function renderSummary(estado) {
         const nivel = vivo ? vivo.nivel : 0;
         const estadoTxt = vivo ? vivo.estado : 'normal';
         const isAlerta = estadoTxt === 'alerta';
-        const coords = (n.lat && n.lon) ? n.lat.toFixed(4) + ', ' + n.lon.toFixed(4) : null;
+        const coords = (n.lat && n.lon) ? n.lat + ', ' + n.lon : null;
         const div = document.createElement('div');
         div.className = 'summary-card ' + estadoTxt;
         div.innerHTML = [
-            '<div class="sc-name">' + n.id + '</div>',
+            '<div class="sc-name">' + (n.nombre || n.id) + '</div>',
             n.ubicacion ? '<div class="sc-ubicacion">' + n.ubicacion + '</div>' : '',
             '<div class="sc-nivel">' + (vivo ? nivel + '%' : '—') + '</div>',
             '<div class="sc-bar"><div class="sc-bar-fill" style="width:' + nivel + '%;background:' + (isAlerta ? '#e94560' : '#4ecca3') + '"></div></div>',
@@ -247,7 +261,7 @@ function actualizar() {
                 const barColor = pct > 80 ? '#e94560' : '#4ecca3';
                 tr.innerHTML = [
                     '<td>' + a.id + '</td>',
-                    '<td><span class="nodo-badge" style="background:' + c.border + '22;color:' + c.border + ';border:1px solid ' + c.border + '44">' + a.nodo_id + '</span></td>',
+                    '<td><span class="nodo-badge" style="background:' + c.border + '22;color:' + c.border + ';border:1px solid ' + c.border + '44">' + (info?.nombre || a.nodo_id) + '<br><small style="opacity:0.5;font-size:0.7rem">' + a.nodo_id + '</small></span></td>',
                     '<td>' + (info ? info.ubicacion || (info.lat && info.lon ? info.lat.toFixed(4) + ', ' + info.lon.toFixed(4) : '—') : '—') + '</td>',
                     '<td>' + fmtFecha(a.fecha) + '</td>',
                     '<td><div class="nivel-cell"><div class="nivel-bar"><div class="nivel-bar-fill" style="width:' + pct + '%;background:' + barColor + '"></div></div><span class="nivel-text">' + pct + '%</span></div></td>',
@@ -268,19 +282,24 @@ function actualizar() {
                 stat2.textContent = (data.stats.max_nivel ?? 0) + '%';
             }
 
+            const toolbar = document.getElementById('toolbar-actions');
             const banner = document.getElementById('status-banner');
             const locSpan = document.getElementById('status-location');
             if (nodoActivo === 'todos') {
                 banner.classList.add('hidden');
+                toolbar.classList.add('hidden');
             } else {
+                toolbar.classList.remove('hidden');
+                const cont = todosNodos.find(n => n.id === nodoActivo);
+                document.getElementById('btn-editar-container').onclick = () => abrirModal(cont);
                 banner.classList.remove('hidden');
                 const icon = document.getElementById('status-icon');
                 const text = document.getElementById('status-text');
-                const cont = todosNodos.find(n => n.id === nodoActivo);
+                const nombreActivo = cont?.nombre || nodoActivo;
                 const locParts = [];
                 if (cont) {
                     if (cont.ubicacion) locParts.push(cont.ubicacion);
-                    if (cont.lat != null && cont.lon != null) locParts.push(cont.lat.toFixed(4) + ', ' + cont.lon.toFixed(4));
+                    if (cont.lat != null && cont.lon != null) locParts.push(cont.lat + ', ' + cont.lon);
                 }
                 locSpan.textContent = locParts.length ? '📍 ' + locParts.join(' · ') : '';
                 const vivo = estado[nodoActivo];
@@ -288,11 +307,11 @@ function actualizar() {
                     if (vivo.estado === 'alerta') {
                         banner.className = 'status-alerta';
                         icon.textContent = '⚠';
-                        text.textContent = nodoActivo + ': Contenedor lleno (' + vivo.nivel + '%)';
+                        text.textContent = nombreActivo + ': Contenedor lleno (' + vivo.nivel + '%)';
                     } else {
                         banner.className = 'status-normal';
                         icon.textContent = '✓';
-                        text.textContent = nodoActivo + ': Contenedor normal (' + vivo.nivel + '%)';
+                        text.textContent = nombreActivo + ': Contenedor normal (' + vivo.nivel + '%)';
                     }
                 } else {
                     const ultimo = data.alertas[0];
@@ -300,16 +319,16 @@ function actualizar() {
                         if (ultimo.estado === 'alerta') {
                             banner.className = 'status-alerta';
                             icon.textContent = '⚠';
-                            text.textContent = nodoActivo + ': ' + ultimo.nivel + '% (último registro)';
+                            text.textContent = nombreActivo + ': ' + ultimo.nivel + '% (último registro)';
                         } else {
                             banner.className = 'status-normal';
                             icon.textContent = '✓';
-                            text.textContent = nodoActivo + ': ' + ultimo.nivel + '% (último registro)';
+                            text.textContent = nombreActivo + ': ' + ultimo.nivel + '% (último registro)';
                         }
                     } else {
                         banner.className = 'status-normal';
                         icon.textContent = '⏳';
-                        text.textContent = nodoActivo + ': Sin datos';
+                        text.textContent = nombreActivo + ': Sin datos';
                     }
                 }
             }
@@ -336,7 +355,7 @@ function verMas() {
         const barColor = pct > 80 ? '#e94560' : '#4ecca3';
         tr.innerHTML = [
             '<td>' + a.id + '</td>',
-            '<td><span class="nodo-badge" style="background:' + c.border + '22;color:' + c.border + ';border:1px solid ' + c.border + '44">' + a.nodo_id + '</span></td>',
+            '<td><span class="nodo-badge" style="background:' + c.border + '22;color:' + c.border + ';border:1px solid ' + c.border + '44">' + (info?.nombre || a.nodo_id) + '<br><small style="opacity:0.5;font-size:0.7rem">' + a.nodo_id + '</small></span></td>',
             '<td>' + (info ? info.ubicacion || (info.lat && info.lon ? info.lat.toFixed(4) + ', ' + info.lon.toFixed(4) : '—') : '—') + '</td>',
             '<td>' + fmtFecha(a.fecha) + '</td>',
             '<td><div class="nivel-cell"><div class="nivel-bar"><div class="nivel-bar-fill" style="width:' + pct + '%;background:' + barColor + '"></div></div><span class="nivel-text">' + pct + '%</span></div></td>',

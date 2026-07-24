@@ -18,14 +18,15 @@
             {% for n in nodos %}
             <button class="tab" data-nodo="{{ n.id }}">{{ n.id }}</button>
             {% endfor %}
-            <button class="tab tab-add" id="btn-add-nodo" title="Agregar contenedor">+</button>
+
         </div>
 
         <div id="modal-overlay" class="hidden">
             <div class="modal">
-                <h3>Agregar contenedor</h3>
-                <input type="text" id="input-nodo-id" placeholder='ej: contenedor3' readonly style="background:#1a1a2e;color:#888;cursor:not-allowed">
-                <input type="text" id="input-lat" placeholder="Latitud (ej: -3.99925)" style="margin-top:10px">
+                <h3 id="modal-title">Agregar contenedor</h3>
+                <input type="text" id="input-nodo-id" placeholder="MAC del ESP32 (ej: AABBCCDDEEFF)" style="background:#16213e;color:#eee">
+                <input type="text" id="input-nombre" placeholder="Nombre visible (ej: Contenedor 1)" style="margin-top:8px">
+                <input type="text" id="input-lat" placeholder="Latitud (ej: -3.99925)" style="margin-top:8px">
                 <input type="text" id="input-lon" placeholder="Longitud (ej: -79.21332)" style="margin-top:8px">
                 <input type="text" id="input-ubicacion" placeholder="Dirección / referencia" style="margin-top:8px">
                 <div class="modal-actions">
@@ -47,6 +48,10 @@
         </div>
 
         <div id="summary-grid" class="hidden"></div>
+
+        <div id="toolbar-actions" class="hidden">
+            <button id="btn-editar-container" class="btn-editar">✎ Editar contenedor</button>
+        </div>
 
         <div id="status-banner" class="hidden">
             <span id="status-icon">✓</span>

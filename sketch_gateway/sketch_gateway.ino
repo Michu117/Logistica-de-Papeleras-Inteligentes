@@ -5,8 +5,8 @@
 #include <esp_wifi.h>
 
 //================= WiFi =================
-const char* ssid = "MoranSanchez"; // MoranSanchez  Internet_UNL
-const char* password = "0702594508"; // 0702594508  UNL1859WiFi
+const char* ssid = "MoranSanchez";
+const char* password = "0702594508";
 
 //================= MQTT =================
 const int mqtt_port = 1883;
@@ -21,10 +21,14 @@ const int LED = 2;
 //================= Variables =============
 volatile bool datosRecibidos = false;
 volatile int nivelRecibido = 0;
-volatile int nodoIdRecibido = 0;
+volatile uint8_t macRecibido[6];
 
-// Estados de alerta por nodo (indexado por nodo_id)
-bool alertaPorNodo[10] = {false};
+#define MAX_NODOS 20
+struct {
+  uint8_t mac[6];
+  bool alerta;
+} nodosAlerta[MAX_NODOS];
+int numNodos = 0;
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -32,10 +36,22 @@ PubSubClient client(espClient);
 //=========================================
 typedef struct {
   int nivel;
-  int nodo_id;
 } Mensaje;
 
 Mensaje datos;
+
+//=========================================
+int findOrCreateNodo(const uint8_t *mac) {
+  for (int i = 0; i < numNodos; i++) {
+    if (memcmp(nodosAlerta[i].mac, mac, 6) == 0) return i;
+  }
+  if (numNodos < MAX_NODOS) {
+    memcpy(nodosAlerta[numNodos].mac, mac, 6);
+    nodosAlerta[numNodos].alerta = false;
+    return numNodos++;
+  }
+  return -1;
+}
 
 //=========================================
 void conectarWiFi() {
@@ -88,7 +104,7 @@ void OnDataRecv(const esp_now_recv_info_t *recv_info,
                 int len) {
   memcpy(&datos, incomingData, sizeof(datos));
   nivelRecibido = datos.nivel;
-  nodoIdRecibido = datos.nodo_id;
+  memcpy((void*)macRecibido, recv_info->src_addr, 6);
   datosRecibidos = true;
 }
 
@@ -113,7 +129,7 @@ void setup() {
   Serial.print("MAC Gateway: ");
   Serial.println(WiFi.macAddress());
 
-  Serial.println("Gateway listo (auto-ID por ESP-NOW)");
+  Serial.println("Gateway listo (ID por MAC)");
 }
 
 //=========================================
@@ -125,18 +141,18 @@ void loop() {
   if (datosRecibidos) {
     datosRecibidos = false;
 
-    if (nodoIdRecibido == 0) {
-      Serial.println("nodo_id=0 ignorado");
-      return;
-    }
+    char macStr[13];
+    snprintf(macStr, sizeof(macStr), "%02X%02X%02X%02X%02X%02X",
+             macRecibido[0], macRecibido[1], macRecibido[2],
+             macRecibido[3], macRecibido[4], macRecibido[5]);
 
-    char topicNivel[50];
-    char topicAlerta[50];
-    snprintf(topicNivel, sizeof(topicNivel), "contenedor%d/nivel", nodoIdRecibido);
-    snprintf(topicAlerta, sizeof(topicAlerta), "contenedor%d/alerta", nodoIdRecibido);
+    char topicNivel[64];
+    char topicAlerta[64];
+    snprintf(topicNivel, sizeof(topicNivel), "%s/nivel", macStr);
+    snprintf(topicAlerta, sizeof(topicAlerta), "%s/alerta", macStr);
 
-    Serial.print("Nodo ");
-    Serial.print(nodoIdRecibido);
+    Serial.print("MAC ");
+    Serial.print(macStr);
     Serial.print(" nivel: ");
     Serial.print(nivelRecibido);
     Serial.println("%");
@@ -146,20 +162,25 @@ void loop() {
     client.publish(topicNivel, mensaje);
 
     bool enAlerta = nivelRecibido > 80;
-    alertaPorNodo[nodoIdRecibido] = enAlerta;
+
+    uint8_t macCopy[6];
+    memcpy(macCopy, (const uint8_t*)macRecibido, 6);
+    int idx = findOrCreateNodo(macCopy);
+    if (idx >= 0) {
+      nodosAlerta[idx].alerta = enAlerta;
+    }
 
     if (enAlerta) {
       client.publish(topicAlerta, "Contenedor lleno");
-      Serial.print("***** ALERTA nodo ");
-      Serial.println(nodoIdRecibido);
+      Serial.print("***** ALERTA MAC ");
+      Serial.println(macStr);
     } else {
       client.publish(topicAlerta, "Contenedor normal");
     }
 
-    // LED encendido si ALGÚN nodo está en alerta
     bool algunAlerta = false;
-    for (int i = 1; i < 10; i++) {
-      if (alertaPorNodo[i]) { algunAlerta = true; break; }
+    for (int i = 0; i < numNodos; i++) {
+      if (nodosAlerta[i].alerta) { algunAlerta = true; break; }
     }
     digitalWrite(LED, algunAlerta ? HIGH : LOW);
   }

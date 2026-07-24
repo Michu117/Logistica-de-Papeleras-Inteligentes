@@ -34,9 +34,7 @@ def api_contenedores():
         nodo_id = data.get('id', '').strip().replace(' ', '')
         if not nodo_id:
             return jsonify({'error': 'ID requerido'}), 400
-        if not nodo_id.startswith('contenedor'):
-            return jsonify({'error': 'ID debe empezar con contenedor'}), 400
-        database.add_nodo(nodo_id, data.get('lat'), data.get('lon'), data.get('ubicacion'))
+        database.add_nodo(nodo_id, data.get('lat'), data.get('lon'), data.get('ubicacion'), data.get('nombre'))
         return jsonify({'ok': True, 'id': nodo_id})
     nodos = database.get_nodos()
     return jsonify({'contenedores': nodos})
@@ -45,7 +43,7 @@ def api_contenedores():
 @app.route('/api/contenedores/<nodo_id>', methods=['PUT'])
 def api_update_nodo(nodo_id):
     data = request.get_json()
-    database.update_nodo(nodo_id, data.get('lat'), data.get('lon'), data.get('ubicacion'))
+    database.update_nodo(nodo_id, data.get('lat'), data.get('lon'), data.get('ubicacion'), data.get('nombre'))
     return jsonify({'ok': True})
 
 

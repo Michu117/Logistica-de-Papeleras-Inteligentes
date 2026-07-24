@@ -1,9 +1,14 @@
 import paho.mqtt.client as mqtt
 from datetime import datetime
+import re
 import database
 import telegram_bot
 
 MQTT_HOST = "localhost"
+
+def es_mac(valor):
+    return bool(re.fullmatch(r'[0-9A-F]{12}', valor))
+
 MQTT_PORT = 1883
 MQTT_USER = "Ruiz26"
 MQTT_PASS = "RelaxedChar206"
@@ -42,12 +47,18 @@ def on_message(client, userdata, msg):
                 "estado": nuevo_estado
             }
 
+            if es_mac(nodo_id) and not database.get_nodo(nodo_id):
+                nombre = f"Contenedor {len(database.get_nodos()) + 1}"
+                database.add_nodo(nodo_id, nombre=nombre)
+
             ultimo_estado = database.get_ultimo_estado(nodo_id)
             if ultimo_estado != nuevo_estado:
                 database.insert_alerta(fecha, nivel, nuevo_estado, nodo_id)
                 print(f"[DB] {nodo_id}: {nuevo_estado} ({nivel}%)")
                 icono = "⚠ ALERTA" if nuevo_estado == "alerta" else "✓ NORMAL"
-                telegram_bot.enviar_alerta(f"{icono} - {nodo_id}\nNivel: {nivel}%\nFecha: {fecha[:19]}")
+                nodo = database.get_nodo(nodo_id)
+                nombre = nodo["nombre"] if nodo and nodo["nombre"] else nodo_id
+                telegram_bot.enviar_alerta(f"{icono} - {nombre}\nID: {nodo_id}\nNivel: {nivel}%\nFecha: {fecha[:19]}")
             else:
                 print(f"[LIVE] {nodo_id}: {nivel}% ({nuevo_estado})")
         except ValueError:
